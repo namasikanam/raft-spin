@@ -95,13 +95,14 @@ end:            if // end here if currentTerm reach the outside of MAX_TERM
                     rv.lastLogIndex = 2
                 fi
 
-                for (i : 0 .. 2) {
-                    if
-                    :: (i != serverId) ->
-end:                    rv_ch[serverId].ch[i]!rv
-                    :: (i == serverId) -> skip
-                    fi
-                }
+end:            if
+                :: (serverId != 0) ->
+                    rv_ch[serverId].ch[0]!rv
+                :: (serverId != 1) ->
+                    rv_ch[serverId].ch[1]!rv
+                :: (serverId != 2) ->
+                    rv_ch[serverId].ch[2]!rv
+                fi
             }
     :: // become leader
         (state[serverId] == candidate && (votesGranted[0] + votesGranted[1] + votesGranted[2] > 1)) ->
@@ -153,7 +154,7 @@ end:                    rv_ch[serverId].ch[i]!rv
                 fi
 
                 bool logOk = rv.lastLogTerm > lastLogTerm || rv.lastLogTerm == lastLogTerm && rv.lastLogIndex >= lastLogIndex;
-                rvr.voteGranted = rv.term == currentTerm[serverId] && logOk && (votedFor == 0 || votedFor == 1);
+                rvr.voteGranted = rv.term == currentTerm[serverId] && logOk && (votedFor == NIL || votedFor == i);
 
                 // rvr.voteGranted = rv.term == currentTerm && (votedFor == NIL || votedFor == i);
 
