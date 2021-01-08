@@ -97,7 +97,8 @@ end:            if // end here if currentTerm reach the outside of MAX_TERM
 
                 for (i : 0 .. 2) {
                     if
-                    :: (i != serverId) -> rv_ch[serverId].ch[i]!rv
+                    :: (i != serverId) ->
+end:                    rv_ch[serverId].ch[i]!rv
                     :: (i == serverId) -> skip
                     fi
                 }
@@ -161,7 +162,7 @@ end:            if // end here if currentTerm reach the outside of MAX_TERM
                 :: rvr.voteGranted -> votedFor = i
                 :: !rvr.voteGranted -> skip
                 fi
-                rvr_ch[serverId].ch[i]!rvr
+end:            rvr_ch[serverId].ch[i]!rvr
             }
     :: // handle RequestVoteResponse
         (rvr_ch[0].ch[serverId]?[rvr] || rvr_ch[1].ch[serverId]?[rvr] || rvr_ch[2].ch[serverId]?[rvr]) ->
@@ -185,11 +186,12 @@ end:            if // end here if currentTerm reach the outside of MAX_TERM
                     skip
                 fi
             }
-    // TODO :: // append entry
+
     // TODO :: // handle AppendEntry
     // TODO :: // handle AppendEntryResponse
     // TODO :: // client request
     // TODO :: // advance commit index
+    // TODO :: // append entries
     od
 };
 
@@ -199,10 +201,10 @@ init {
     run server(2)
 }
 
-// ltl electionSafety {
-//     always !(
-//         (state[0] == leader && state[1] == leader && currentTerm[0] == currentTerm[1])
-//         || (state[0] == leader && state[2] == leader && currentTerm[0] == currentTerm[2])
-//         || (state[1] == leader && state[2] == leader && currentTerm[1] == currentTerm[2])
-//     )
-// }
+ltl electionSafety {
+    always !(
+        (state[0] == leader && state[1] == leader && currentTerm[0] == currentTerm[1])
+        || (state[0] == leader && state[2] == leader && currentTerm[0] == currentTerm[2])
+        || (state[1] == leader && state[2] == leader && currentTerm[1] == currentTerm[2])
+    )
+}
