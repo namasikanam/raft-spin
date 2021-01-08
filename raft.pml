@@ -6,7 +6,7 @@
 
 // message channels
 typedef AppendEntry {
-    byte term, index, prevLogTerm
+    byte term, leaderCommit, index, prevLogTerm
 };
 typedef AppendEntryChannels {
     chan ch[3] = [1] of { AppendEntry };
@@ -39,26 +39,22 @@ typedef RequestVoteResponseChannels {
 };
 RequestVoteResponseChannels rvr_ch[3];
 
-// global variables
-byte leaderCommit = 0; // the max committed index + 1
-
 // The following variables are actually local,
 // we move them globally, because SPIN doesn't support
 // that represent LTL with local variables.
 mtype:State = { leader, candidate, follower };
 mtype:State state[3];
 byte currentTerm[3];
-
 typedef Logs {
     byte log[2];
 };
 Logs log[3];
+byte commitIndex[3];
 
-// TOOD: 这个 provided 可能还得再考虑一下
-proctype server(byte serverId) provided (leaderCommit < MAX_LOG) {
+// 如果有 commitIndex 到了 MAX_LOG 的话，就说明几乎满啦，就没必要再跑了
+proctype server(byte serverId) {
     state[serverId] = follower;
     byte votedFor = NIL;
-    byte commitIndex = 0; // the max committed index + 1
     
     // helpers
     byte i;
@@ -67,6 +63,7 @@ proctype server(byte serverId) provided (leaderCommit < MAX_LOG) {
     RequestVote rv;
     byte lastLogTerm, lastLogIndex;
     RequestVoteResponse rvr;
+    bool logOk;
 
     AppendEntry ae;
     AppendEntryResponse aer;
@@ -78,7 +75,7 @@ proctype server(byte serverId) provided (leaderCommit < MAX_LOG) {
                 state[serverId] = candidate;
                 currentTerm[serverId] = currentTerm[serverId] + 1;
 
-end:            if // end here if currentTerm reach the outside of MAX_TERM
+end_max_term:   if // end if the limit is reached, 注意这里 MAX_TERM 是可以去到滴，这样才能体现出设计用意
                 :: (currentTerm[serverId] <= MAX_TERM) -> skip
                 fi
 
@@ -104,13 +101,13 @@ end:            if // end here if currentTerm reach the outside of MAX_TERM
                     rv.lastLogIndex = 2
                 fi
 
-end:            if
+                if
                 :: (serverId != 0) ->
-                    rv_ch[serverId].ch[0]!rv
+end_rv_0:           rv_ch[serverId].ch[0]!rv
                 :: (serverId != 1) ->
-                    rv_ch[serverId].ch[1]!rv
+end_rv_1:           rv_ch[serverId].ch[1]!rv
                 :: (serverId != 2) ->
-                    rv_ch[serverId].ch[2]!rv
+end_rv_2:           rv_ch[serverId].ch[2]!rv
                 fi
             }
     :: // become leader
@@ -148,7 +145,7 @@ end:            if
                     lastLogIndex = 2
                 fi
 
-                bool logOk = rv.lastLogTerm > lastLogTerm || rv.lastLogTerm == lastLogTerm && rv.lastLogIndex >= lastLogIndex;
+                logOk = rv.lastLogTerm > lastLogTerm || rv.lastLogTerm == lastLogTerm && rv.lastLogIndex >= lastLogIndex;
                 rvr.voteGranted = rv.term == currentTerm[serverId] && logOk && (votedFor == NIL || votedFor == i);
 
                 // rvr.voteGranted = rv.term == currentTerm && (votedFor == NIL || votedFor == i);
@@ -158,7 +155,7 @@ end:            if
                 :: rvr.voteGranted -> votedFor = i
                 :: !rvr.voteGranted -> skip
                 fi
-end:            rvr_ch[serverId].ch[i]!rvr
+end_rvr:        rvr_ch[serverId].ch[i]!rvr
             }
     :: // handle RequestVoteResponse
         (rvr_ch[0].ch[serverId]?[rvr] || rvr_ch[1].ch[serverId]?[rvr] || rvr_ch[2].ch[serverId]?[rvr]) ->
@@ -193,15 +190,16 @@ end:            rvr_ch[serverId].ch[i]!rvr
                 fi
 
                 ae.term = currentTerm[serverId];
+                ae.leaderCommit = commitIndex[serverId];
                 if
-                :: (commitIndex > 0 && log[serverId].log[0] != log[i].log[0]) ->
+                :: (log[serverId].log[0] != log[i].log[0]) ->
                     ae.index = 0
-                :: (commitIndex > 1 && log[serverId].log[0] == log[i].log[0] && log[serverId].log[1] != log[i].log[1]) ->
+                :: (log[serverId].log[1] != 0 && log[serverId].log[0] == log[i].log[0] && log[serverId].log[1] != log[i].log[1]) ->
                     ae.index = 1
                     ae.prevLogTerm = log[i].log[0]
                 :: ae.index = NIL
                 fi
-end:            ae_ch[serverId].ch[i]!ae
+end_ae:         ae_ch[serverId].ch[i]!ae
             }
     :: // handle AppendEntry
         (ae_ch[0].ch[serverId]?[ae] || ae_ch[1].ch[serverId]?[ae] || ae_ch[2].ch[serverId]?[ae]) ->
@@ -235,19 +233,24 @@ end:            ae_ch[serverId].ch[i]!ae
                 fi
                 assert(!(ae.term == currentTerm[serverId]) || (state[serverId] == follower));
                 
-                bool logOk = ae.index == 0 || ae.index == 1 && ae.prevLogTerm == log[i].log[0];
+                logOk = ae.index == 0 || (ae.index == 1 && ae.prevLogTerm == log[serverId].log[0]);
                 aer.term = currentTerm[i];
-end:            if
+                if
                 :: (ae.term < currentTerm[i] || ae.term == currentTerm[serverId] && state[serverId] == follower && !logOk) -> // reject request
                     aer.success = 0;
-                    aer_ch[serverId].ch[i]!aer
+end_aer_rej:        aer_ch[serverId].ch[i]!aer
                 :: (ae.term == currentTerm[serverId] && state[serverId] == follower && logOk) ->
                     aer.success = 1;
 
                     log[serverId].log[ae.index] = ae.term;
-                    commitIndex = leaderCommit;
 
-                    aer_ch[serverId].ch[i]!aer
+                    // 这里可以直接赋值，是因为我们的 MAX_LOG 很小
+                    // leaderCommit 要么是 0，要么是 1。
+                    // 如果 leaderCommit 是 0，说明这个 server 的 commitIndex 也是 0，无影响；
+                    // 如果 leaderCommit 是 1，无论这个 server 是从 0 到 1 还是从 1 到 2，commitIndex 都是可以放 1 的
+                    commitIndex[serverId] = ae.leaderCommit;
+
+end_aer_acc:        aer_ch[serverId].ch[i]!aer
                 fi
             }
     :: // handle AppendEntryResponse
@@ -262,31 +265,43 @@ end:            if
                 assert(i != serverId);
 
                 if
+                :: (aer.term > currentTerm[serverId]) -> skip
+                :: (aer.term < currentTerm[serverId]) -> skip
+                :: (aer.term == currentTerm[serverId] && aer.success && state[serverId] == leader) -> skip
+                :: (aer.term == currentTerm[serverId] && !(aer.success && state[serverId] == leader)) -> skip
+                fi
+
+                if
                 :: (aer.term > currentTerm[serverId]) -> // update terms
                     currentTerm[serverId] = aer.term;
                     state[serverId] = follower;
                     votedFor = NIL
                 :: (aer.term < currentTerm[serverId]) ->
                     skip
-                :: (aer.term == currentTerm[serverId] && aer.success) ->
-                    assert(state[serverId] == leader);
-                    assert(leaderCommit == commitIndex);
-
+                :: (aer.term == currentTerm[serverId] && aer.success && state[serverId] == leader) ->
                     // advance commit index
                     // as we only have 3 servers
                     // one success AppendEntry means committed
 
-                    commitIndex = commitIndex + 1;
-                    leaderCommit = leaderCommit + 1
-                :: (aer.term == currentTerm[serverId] && !aer.success) ->
+end_commitIndex:    if // end if commitIndex reaches the limit
+                    :: (commitIndex[serverId] == 0 && log[i].log[0] == log[serverId].log[0]) ->
+                        commitIndex[serverId] = 1
+                    // this is a little tricky
+                    // we do NOT skip if commitIndex[serverId] should be 2
+                    :: (commitIndex[serverId] == 1 && !(log[serverId].log[1] != 0 && log[i].log[1] == log[serverId].log[1])) ->
+                        skip;
+                    fi
+                :: (aer.term == currentTerm[serverId] && !(aer.success && state[serverId] == leader)) ->
                     skip
                 fi
             }
     :: // client request
         (state[serverId] == leader && log[serverId].log[1] == 0) ->
             if
-            :: log[serverId].log[0] == 0 -> log[serverId].log[0] = currentTerm[serverId]
-            :: log[serverId].log[1] == 0 -> log[serverId].log[1] = currentTerm[serverId]
+            :: log[serverId].log[0] == 0 ->
+                log[serverId].log[0] = currentTerm[serverId]
+            :: log[serverId].log[0] != 0 ->
+                log[serverId].log[1] = currentTerm[serverId]
             fi 
     od
 };
@@ -304,3 +319,71 @@ ltl electionSafety {
         || (state[1] == leader && state[2] == leader && currentTerm[1] == currentTerm[2])
     )
 }
+
+// ltl leaderAppendOnly {
+//     always (
+//         (state[0] == leader implies
+//             (
+//                 (log[0].log[0] == 0)
+//                 || ((log[0].log[0] == 1) weakuntil (state[0] != leader))
+//                 || ((log[0].log[0] == 2) weakuntil (state[0] != leader))
+//                 || ((log[0].log[0] == 3) weakuntil (state[0] != leader))
+//             ) && (
+//                 (log[0].log[1] == 0)
+//                 || ((log[0].log[1] == 1) weakuntil (state[0] != leader))
+//                 || ((log[0].log[1] == 2) weakuntil (state[0] != leader))
+//                 || ((log[0].log[1] == 3) weakuntil (state[0] != leader))
+//             ) && (
+//                 (log[0].log[2] == 0)
+//                 || ((log[0].log[2] == 1) weakuntil (state[0] != leader))
+//                 || ((log[0].log[2] == 2) weakuntil (state[0] != leader))
+//                 || ((log[0].log[2] == 3) weakuntil (state[0] != leader))
+//             )
+//         )
+//         && (state[1] == leader implies
+//             (
+//                 (log[1].log[0] == 0)
+//                 || ((log[1].log[0] == 1) weakuntil (state[1] != leader))
+//                 || ((log[1].log[0] == 2) weakuntil (state[1] != leader))
+//                 || ((log[1].log[0] == 3) weakuntil (state[1] != leader))
+//             ) && (
+//                 (log[1].log[1] == 0)
+//                 || ((log[1].log[1] == 1) weakuntil (state[1] != leader))
+//                 || ((log[1].log[1] == 2) weakuntil (state[1] != leader))
+//                 || ((log[1].log[1] == 3) weakuntil (state[1] != leader))
+//             ) && (
+//                 (log[1].log[2] == 0)
+//                 || ((log[1].log[2] == 1) weakuntil (state[1] != leader))
+//                 || ((log[1].log[2] == 2) weakuntil (state[1] != leader))
+//                 || ((log[1].log[2] == 3) weakuntil (state[1] != leader))
+//             )
+//         ) && (state[2] == leader implies
+//             (
+//                 (log[2].log[0] == 0)
+//                 || ((log[2].log[0] == 1) weakuntil (state[2] != leader))
+//                 || ((log[2].log[0] == 2) weakuntil (state[2] != leader))
+//                 || ((log[2].log[0] == 3) weakuntil (state[2] != leader))
+//             ) && (
+//                 (log[2].log[1] == 0)
+//                 || ((log[2].log[1] == 1) weakuntil (state[2] != leader))
+//                 || ((log[2].log[1] == 2) weakuntil (state[2] != leader))
+//                 || ((log[2].log[1] == 3) weakuntil (state[2] != leader))
+//             ) && (
+//                 (log[2].log[2] == 0)
+//                 || ((log[2].log[2] == 1) weakuntil (state[2] != leader))
+//                 || ((log[2].log[2] == 2) weakuntil (state[2] != leader))
+//                 || ((log[2].log[2] == 3) weakuntil (state[2] != leader))
+//             )
+//         )
+//     )
+// }
+
+// ltl logMatching {
+//     always (
+//         ((log[0].log[1] == log[1].log[1]) implies (log[0].log[0] == log[1].log[0]))
+//         && ((log[0].log[1] == log[2].log[1]) implies (log[0].log[0] == log[2].log[0]))
+//         && ((log[1].log[1] == log[2].log[1]) implies (log[1].log[0] == log[2].log[0]))
+//     )
+// }
+
+// TODO: 看来 commitIndex 也得拿到前面来QAQ
