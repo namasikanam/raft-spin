@@ -265,13 +265,6 @@ end_aer_acc:        aer_ch[serverId].ch[i]!aer
                 assert(i != serverId);
 
                 if
-                :: (aer.term > currentTerm[serverId]) -> skip
-                :: (aer.term < currentTerm[serverId]) -> skip
-                :: (aer.term == currentTerm[serverId] && aer.success && state[serverId] == leader) -> skip
-                :: (aer.term == currentTerm[serverId] && !(aer.success && state[serverId] == leader)) -> skip
-                fi
-
-                if
                 :: (aer.term > currentTerm[serverId]) -> // update terms
                     currentTerm[serverId] = aer.term;
                     state[serverId] = follower;
@@ -320,70 +313,109 @@ ltl electionSafety {
     )
 }
 
-// ltl leaderAppendOnly {
-//     always (
-//         (state[0] == leader implies
-//             (
-//                 (log[0].log[0] == 0)
-//                 || ((log[0].log[0] == 1) weakuntil (state[0] != leader))
-//                 || ((log[0].log[0] == 2) weakuntil (state[0] != leader))
-//                 || ((log[0].log[0] == 3) weakuntil (state[0] != leader))
-//             ) && (
-//                 (log[0].log[1] == 0)
-//                 || ((log[0].log[1] == 1) weakuntil (state[0] != leader))
-//                 || ((log[0].log[1] == 2) weakuntil (state[0] != leader))
-//                 || ((log[0].log[1] == 3) weakuntil (state[0] != leader))
-//             ) && (
-//                 (log[0].log[2] == 0)
-//                 || ((log[0].log[2] == 1) weakuntil (state[0] != leader))
-//                 || ((log[0].log[2] == 2) weakuntil (state[0] != leader))
-//                 || ((log[0].log[2] == 3) weakuntil (state[0] != leader))
-//             )
-//         )
-//         && (state[1] == leader implies
-//             (
-//                 (log[1].log[0] == 0)
-//                 || ((log[1].log[0] == 1) weakuntil (state[1] != leader))
-//                 || ((log[1].log[0] == 2) weakuntil (state[1] != leader))
-//                 || ((log[1].log[0] == 3) weakuntil (state[1] != leader))
-//             ) && (
-//                 (log[1].log[1] == 0)
-//                 || ((log[1].log[1] == 1) weakuntil (state[1] != leader))
-//                 || ((log[1].log[1] == 2) weakuntil (state[1] != leader))
-//                 || ((log[1].log[1] == 3) weakuntil (state[1] != leader))
-//             ) && (
-//                 (log[1].log[2] == 0)
-//                 || ((log[1].log[2] == 1) weakuntil (state[1] != leader))
-//                 || ((log[1].log[2] == 2) weakuntil (state[1] != leader))
-//                 || ((log[1].log[2] == 3) weakuntil (state[1] != leader))
-//             )
-//         ) && (state[2] == leader implies
-//             (
-//                 (log[2].log[0] == 0)
-//                 || ((log[2].log[0] == 1) weakuntil (state[2] != leader))
-//                 || ((log[2].log[0] == 2) weakuntil (state[2] != leader))
-//                 || ((log[2].log[0] == 3) weakuntil (state[2] != leader))
-//             ) && (
-//                 (log[2].log[1] == 0)
-//                 || ((log[2].log[1] == 1) weakuntil (state[2] != leader))
-//                 || ((log[2].log[1] == 2) weakuntil (state[2] != leader))
-//                 || ((log[2].log[1] == 3) weakuntil (state[2] != leader))
-//             ) && (
-//                 (log[2].log[2] == 0)
-//                 || ((log[2].log[2] == 1) weakuntil (state[2] != leader))
-//                 || ((log[2].log[2] == 2) weakuntil (state[2] != leader))
-//                 || ((log[2].log[2] == 3) weakuntil (state[2] != leader))
-//             )
-//         )
-//     )
-// }
+// for scalability of SPIN, we split the huge complete formula into small formulas
+ltl leaderAppendOnly00 {
+    always (
+        state[0] == leader implies (
+            (log[0].log[0] == 0)
+            || ((log[0].log[0] == 1) weakuntil (state[0] != leader))
+            || ((log[0].log[0] == 2) weakuntil (state[0] != leader))
+            || ((log[0].log[0] == 3) weakuntil (state[0] != leader))
+        )
+    )
+}
+ltl leaderAppendOnly01 {
+    always (
+        state[0] == leader implies (
+            (log[0].log[1] == 0)
+            || ((log[0].log[1] == 1) weakuntil (state[0] != leader))
+            || ((log[0].log[1] == 2) weakuntil (state[0] != leader))
+            || ((log[0].log[1] == 3) weakuntil (state[0] != leader))
+        )
+    )
+}
+ltl leaderAppendOnly10 {
+    always (
+        state[1] == leader implies (
+            (log[1].log[0] == 0)
+            || ((log[1].log[0] == 1) weakuntil (state[1] != leader))
+            || ((log[1].log[0] == 2) weakuntil (state[1] != leader))
+            || ((log[1].log[0] == 3) weakuntil (state[1] != leader))
+        )
+    )
+}
+ltl leaderAppendOnly11 {
+    always (
+        state[1] == leader implies (
+            (log[1].log[1] == 0)
+            || ((log[1].log[1] == 1) weakuntil (state[1] != leader))
+            || ((log[1].log[1] == 2) weakuntil (state[1] != leader))
+            || ((log[1].log[1] == 3) weakuntil (state[1] != leader))
+        )
+    )
+}
+ltl leaderAppendOnly20 {
+    always (
+        state[2] == leader implies (
+            (log[2].log[0] == 0)
+            || ((log[2].log[0] == 1) weakuntil (state[2] != leader))
+            || ((log[2].log[0] == 2) weakuntil (state[2] != leader))
+            || ((log[2].log[0] == 3) weakuntil (state[2] != leader))
+        )
+    )
+}
+ltl leaderAppendOnly21 {
+    always (
+        state[2] == leader implies (
+            (log[2].log[1] == 0)
+            || ((log[2].log[1] == 1) weakuntil (state[2] != leader))
+            || ((log[2].log[1] == 2) weakuntil (state[2] != leader))
+            || ((log[2].log[1] == 3) weakuntil (state[2] != leader))
+        )
+    )
+}
 
-// ltl logMatching {
-//     always (
-//         ((log[0].log[1] == log[1].log[1]) implies (log[0].log[0] == log[1].log[0]))
-//         && ((log[0].log[1] == log[2].log[1]) implies (log[0].log[0] == log[2].log[0]))
-//         && ((log[1].log[1] == log[2].log[1]) implies (log[1].log[0] == log[2].log[0]))
-//     )
-// }
+ltl logMatching {
+    always (
+        ((log[0].log[1] != 0 && log[0].log[1] == log[1].log[1])
+            implies (log[0].log[0] == log[1].log[0]))
+        && ((log[0].log[1] != 0 && log[0].log[1] == log[2].log[1])
+            implies (log[0].log[0] == log[2].log[0]))
+        && ((log[1].log[1] != 0 && log[1].log[1] == log[2].log[1])
+            implies (log[1].log[0] == log[2].log[0]))
+    )
+}
 
-// TODO: 看来 commitIndex 也得拿到前面来QAQ
+// 这里我们已知被 commit 的 entry 就不会再改了，这需要基于这样一个观察：
+// 每一个 server 在将来都可能成为 leader
+ltl leaderCompleteness {
+    always (
+        (
+            (commitIndex[0] == 1) implies
+                always (
+                    ((state[1] == leader) implies (log[0].log[0] == log[1].log[0]))
+                    && ((state[2] == leader) implies (log[0].log[0] == log[2].log[0]))
+                )
+        ) && (
+            (commitIndex[1] == 1) implies
+                always (
+                    ((state[0] == leader) implies (log[1].log[0] == log[0].log[0]))
+                    && ((state[2] == leader) implies (log[1].log[0] == log[2].log[0]))
+                )
+        ) && (
+            (commitIndex[2] == 1) implies
+                always (
+                    ((state[0] == leader) implies (log[2].log[0] == log[0].log[0]))
+                    && ((state[1] == leader) implies (log[2].log[0] == log[1].log[0]))
+                )
+        )
+    )
+}
+
+ltl stateMachineSafety {
+    always (
+        ((commitIndex[0] == 1 && commitIndex[1] == 1) implies (log[0].log[0] == log[1].log[0]))
+        && ((commitIndex[0] == 1 && commitIndex[2] == 1) implies (log[0].log[0] == log[2].log[0]))
+        && ((commitIndex[1] == 1 && commitIndex[2] == 1) implies (log[1].log[0] == log[2].log[0]))
+    )
+}
