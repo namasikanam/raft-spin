@@ -75,7 +75,7 @@ proctype server(byte serverId) {
                 state[serverId] = candidate;
                 currentTerm[serverId] = currentTerm[serverId] + 1;
 
-end_max_term:   if // end if the limit is reached, 注意这里 MAX_TERM 是可以去到滴，这样才能体现出设计用意
+end_max_term:   if // end if the limit is reached, 注意这里 MAX_TERM 是可以取到滴，这样才能体现出设计意图
                 :: (currentTerm[serverId] <= MAX_TERM) -> skip
                 fi
 
@@ -234,7 +234,7 @@ end_ae:         ae_ch[serverId].ch[i]!ae
                 assert(!(ae.term == currentTerm[serverId]) || (state[serverId] == follower));
                 
                 logOk = ae.index == 0 || (ae.index == 1 && ae.prevLogTerm == log[serverId].log[0]);
-                aer.term = currentTerm[i];
+                aer.term = currentTerm[serverId];
                 if
                 :: (ae.term < currentTerm[i] || ae.term == currentTerm[serverId] && state[serverId] == follower && !logOk) -> // reject request
                     aer.success = 0;
@@ -282,7 +282,7 @@ end_commitIndex:    if // end if commitIndex reaches the limit
                     // this is a little tricky
                     // we do NOT skip if commitIndex[serverId] should be 2
                     :: (commitIndex[serverId] == 1 && !(log[serverId].log[1] != 0 && log[i].log[1] == log[serverId].log[1])) ->
-                        skip;
+                        skip; // actually this case won't be reached
                     fi
                 :: (aer.term == currentTerm[serverId] && !(aer.success && state[serverId] == leader)) ->
                     skip
