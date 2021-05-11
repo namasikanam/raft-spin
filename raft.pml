@@ -1,3 +1,7 @@
+/*
+    Author: Xingyu Xie
+*/
+
 #define MAX_TERM 3 // 1 to 3
 #define MAX_LOG 2 // 0 to 1
 #define MAX_SERVER // 1 to 3
@@ -51,7 +55,8 @@ typedef Logs {
 Logs log[3];
 byte commitIndex[3];
 
-// 如果有 commitIndex 到了 MAX_LOG 的话，就说明几乎满啦，就没必要再跑了
+// If commitIndex reaches MAX_LOG, the whole system is nearly full.
+// There's no need to run further.
 proctype server(byte serverId) {
     state[serverId] = follower;
     byte votedFor = NIL;
@@ -75,7 +80,7 @@ proctype server(byte serverId) {
                 state[serverId] = candidate;
                 currentTerm[serverId] = currentTerm[serverId] + 1;
 
-end_max_term:   if // end if the limit is reached, 注意这里 MAX_TERM 是可以取到滴，这样才能体现出设计意图
+end_max_term:   if // end if the limit is reached. Note that MAX_TERM is reachable here, which just shows the design intention
                 :: (currentTerm[serverId] <= MAX_TERM) -> skip
                 fi
 
@@ -147,8 +152,6 @@ end_rv_2:           rv_ch[serverId].ch[2]!rv
 
                 logOk = rv.lastLogTerm > lastLogTerm || rv.lastLogTerm == lastLogTerm && rv.lastLogIndex >= lastLogIndex;
                 rvr.voteGranted = rv.term == currentTerm[serverId] && logOk && (votedFor == NIL || votedFor == i);
-
-                // rvr.voteGranted = rv.term == currentTerm && (votedFor == NIL || votedFor == i);
 
                 rvr.term = currentTerm[serverId];
                 if
@@ -244,10 +247,11 @@ end_aer_rej:        aer_ch[serverId].ch[i]!aer
 
                     log[serverId].log[ae.index] = ae.term;
 
-                    // 这里可以直接赋值，是因为我们的 MAX_LOG 很小
-                    // leaderCommit 要么是 0，要么是 1。
-                    // 如果 leaderCommit 是 0，说明这个 server 的 commitIndex 也是 0，无影响；
-                    // 如果 leaderCommit 是 1，无论这个 server 是从 0 到 1 还是从 1 到 2，commitIndex 都是可以放 1 的
+                    // Direct assignment is admissible here.
+                    // Because our MAX_LOG is small enough (2).
+                    // leaderCommit is either 0 or 1.
+                    // If leaderCommit is 0, commitIndex of the server must be 0.
+                    // If leaderCommit is 1, commitIndex of the server can be 0.
                     commitIndex[serverId] = ae.leaderCommit;
 
 end_aer_acc:        aer_ch[serverId].ch[i]!aer
