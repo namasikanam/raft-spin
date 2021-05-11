@@ -1,7 +1,5 @@
 # 使用 SPIN 对 Raft 算法的建模与验证
 
-> 计 72 谢兴宇
-
 ## 问题描述
 
 Paxos 共识算法以难以理解著称，为了简化 Paxos 的实现和理解难度，Diego Ongaro 等人于 ATC'14 提出了 Raft 算法。
